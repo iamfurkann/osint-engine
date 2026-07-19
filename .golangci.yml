@@ -1,5 +1,3 @@
-version: "2"
-
 run:
   timeout: 5m
   go: '1.24'
@@ -11,8 +9,5 @@ linters:
     - govet
     - ineffassign
     - unused
-
-formatters:
-  enable:
     - gofmt
     - goimports
