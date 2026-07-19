@@ -22,9 +22,9 @@ jobs:
         run: go mod tidy
 
       - name: Run Linter
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2
 
       - name: Run Tests
         run: make test

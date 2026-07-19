@@ -24,11 +24,11 @@ func TestEnvOverrides(t *testing.T) {
 	baseDir := "/tmp/.osint"
 	cfg := DefaultConfig(baseDir)
 
-	os.Setenv("OSINT_LOG_LEVEL", "debug")
-	os.Setenv("OSINT_MAX_WORKERS", "25")
+	_ = os.Setenv("OSINT_LOG_LEVEL", "debug")
+	_ = os.Setenv("OSINT_MAX_WORKERS", "25")
 	defer func() {
-		os.Unsetenv("OSINT_LOG_LEVEL")
-		os.Unsetenv("OSINT_MAX_WORKERS")
+		_ = os.Unsetenv("OSINT_LOG_LEVEL")
+		_ = os.Unsetenv("OSINT_MAX_WORKERS")
 	}()
 
 	cfg.applyEnvOverrides()

@@ -1,24 +1,24 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/iamfurkann/osint-engine/internal/config"
+	"github.com/iamfurkann/osint-engine/internal/db"
 	"github.com/iamfurkann/osint-engine/internal/logger"
 	"github.com/rs/zerolog/log"
 )
 
 func main() {
-	// 1. Yapılandırmayı yükle
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Konfigürasyon yüklenemedi: %v\n", err)
 		os.Exit(1)
 	}
 
-	// 2. Log dizinini belirle ve Loglayıcıyı başlat
 	baseDir, _ := config.GetDefaultDir()
 	logDir := filepath.Join(baseDir, "logs")
 
@@ -27,9 +27,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Log sistemini kullanarak ilk kaydımızı atıyoruz
 	log.Info().Str("version", cfg.Global.Version).Msg("OSINT Engine CLI başlatıldı")
 
-	// Kullanıcıya yönelik standart çıktı (stdout)
+	// --- VERİTABANI BAĞLANTISI ---
+	ctx := context.Background()
+	database, err := db.Connect(ctx, cfg.Database.AppDBPath)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Veritabanına bağlanılamadı")
+	}
+	defer func() { _ = database.Close() }()
+
+	if err := database.Migrate(ctx); err != nil {
+		log.Fatal().Err(err).Msg("Veritabanı migrasyonu başarısız")
+	}
+	// -----------------------------
+
 	fmt.Printf("OSINT Engine CLI %s (Log Level: %s)\n", cfg.Global.Version, cfg.Global.LogLevel)
+	fmt.Println("Veritabanı bağlantısı ve şema kontrolleri başarılı.")
 }

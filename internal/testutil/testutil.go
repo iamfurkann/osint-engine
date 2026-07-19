@@ -28,9 +28,9 @@ func SetEnv(t *testing.T, key, value string) {
 	// Test bittiğinde çalışacak temizlik fonksiyonu
 	t.Cleanup(func() {
 		if exists {
-			os.Setenv(key, originalValue)
+			_ = os.Setenv(key, originalValue)
 		} else {
-			os.Unsetenv(key)
+			_ = os.Unsetenv(key)
 		}
 	})
 }
