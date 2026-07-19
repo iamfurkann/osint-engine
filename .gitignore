@@ -1,0 +1,16 @@
+# Binaries
+/bin/
+osint
+osintd
+
+# OSINT specific
+.osint/
+
+# Test/Coverage
+*.out
+*.prof
+
+# IDEs
+.idea/
+.vscode/
+*.swp
