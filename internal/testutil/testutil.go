@@ -17,9 +17,9 @@ func SetupTempDir(t *testing.T) string {
 // Test bittiğinde ortam değişkenini eski haline getirir veya siler.
 func SetEnv(t *testing.T, key, value string) {
 	t.Helper()
-	
+
 	originalValue, exists := os.LookupEnv(key)
-	
+
 	err := os.Setenv(key, value)
 	if err != nil {
 		t.Fatalf("Failed to set env %s: %v", key, err)
