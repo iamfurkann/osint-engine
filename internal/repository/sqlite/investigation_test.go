@@ -5,37 +5,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/iamfurkann/osint-engine/internal/db"
 	"github.com/iamfurkann/osint-engine/internal/domain"
 	"github.com/iamfurkann/osint-engine/internal/errors"
 	"github.com/iamfurkann/osint-engine/internal/testutil"
 )
 
-// setupTestDB, test bitiminde kendini yok eden izole bir SQLite veritabanı kurar.
-func setupTestDB(t *testing.T) *db.DB {
-	t.Helper()
-	dbPath := testutil.TempSQLiteDBPath(t)
-	ctx := context.Background()
-
-	database, err := db.Connect(ctx, dbPath)
-	if err != nil {
-		t.Fatalf("failed to connect to test db: %v", err)
-	}
-
-	// Tabloları oluşturmak için migrasyonu çalıştır
-	if err := database.Migrate(ctx); err != nil {
-		t.Fatalf("failed to migrate test db: %v", err)
-	}
-
-	t.Cleanup(func() {
-		_ = database.Close()
-	})
-
-	return database
-}
-
 func TestInvestigationRepository(t *testing.T) {
-	database := setupTestDB(t)
+	// Artık merkezi yardımcımızı kullanıyoruz
+	database := testutil.SetupTestDB(t)
 	repo := NewInvestigationRepository(database)
 	ctx := context.Background()
 

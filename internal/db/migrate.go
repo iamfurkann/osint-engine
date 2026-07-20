@@ -27,7 +27,16 @@ var migrations = []string{
 		found_by TEXT NOT NULL,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY(investigation_id) REFERENCES investigations(id) ON DELETE CASCADE
-	);`, // V2: Bulgular (Çıktılar) tablosu
+	);`, // V2: Bulgular tablosu
+	`CREATE TABLE IF NOT EXISTS plugins (
+		name TEXT PRIMARY KEY,
+		description TEXT,
+		version TEXT NOT NULL,
+		status TEXT NOT NULL,
+		language TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);`, // V3: Eklentiler (Plugins) tablosu
 }
 
 // Migrate, veritabanını en güncel şema versiyonuna yükseltir.

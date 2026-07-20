@@ -6,10 +6,11 @@ import (
 	"time"
 
 	"github.com/iamfurkann/osint-engine/internal/domain"
+	"github.com/iamfurkann/osint-engine/internal/testutil"
 )
 
 func TestFindingRepository(t *testing.T) {
-	database := setupTestDB(t) // investigation_test.go içindeki yardımcı fonksiyon
+	database := testutil.SetupTestDB(t) // investigation_test.go içindeki yardımcı fonksiyon
 
 	invRepo := NewInvestigationRepository(database)
 	findingRepo := NewFindingRepository(database)
