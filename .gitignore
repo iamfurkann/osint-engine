@@ -1,5 +1,7 @@
 # Binaries
 /bin/
+/osint
+/osintd
 
 # OSINT specific
 .osint/
@@ -7,8 +9,26 @@
 # Test/Coverage
 *.out
 *.prof
+coverage.*
+
+# Generated reports (üretilmiş çıktı — kaynak değil)
+/rapor.html
+/yeni_rapor.html
+/test_rapor.html
+*_rapor.html
+
+# Frontend
+/ui/node_modules/
+/ui/dist/
+/ui/.vite/
 
 # IDEs
 .idea/
 .vscode/
 *.swp
+
+# OS
+.DS_Store
+
+# Claude Code yerel yapılandırması
+/.claude/

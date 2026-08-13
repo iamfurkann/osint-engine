@@ -1,4 +1,4 @@
-.PHONY: build clean test lint release
+.PHONY: build clean test test-race lint release
 
 APP_NAME_CLI = osint
 APP_NAME_DAEMON = osintd
@@ -16,7 +16,12 @@ clean:
 
 test:
 	@echo "Running tests..."
-	go test -v ./...
+	go test ./...
+
+# Yarış koşulu tespiti (CI'da bu kullanılır). CGO gerektirir.
+test-race:
+	@echo "Running tests with race detector..."
+	CGO_ENABLED=1 go test -race ./...
 
 lint:
 	@echo "Running linter..."

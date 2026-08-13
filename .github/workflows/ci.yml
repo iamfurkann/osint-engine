@@ -7,27 +7,62 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build-and-test:
+  go:
+    name: Go — build, test, lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Sürüm TEK kaynaktan (go.mod) okunur.
+      # Daha önce burada '1.24.x' sabit yazılıydı ve go.mod 'go 1.25.0' diyordu;
+      # bu çakışma CI'ı kalıcı olarak kırıyordu. Artık sürüm sürüklenmesi imkânsız.
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.x'
+          go-version-file: go.mod
+          cache: true
 
-      - name: Install Dependencies
-        run: go mod tidy
+      # 'go mod tidy' CI'da go.mod'u DEĞİŞTİRİR — build'i sessizce farklı bir
+      # bağımlılık kümesiyle çalıştırır. Bunun yerine indiriyoruz ve
+      # tidy'nin temiz olduğunu ayrıca doğruluyoruz.
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Verify go.mod/go.sum is tidy
+        run: go mod tidy -diff
+
+      - name: Build
+        run: make build
+
+      - name: Test (race detector)
+        run: make test-race
 
       - name: Run Linter
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
 
-      - name: Run Tests
-        run: make test
+  ui:
+    name: UI — lint, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
 
       - name: Build
-        run: make build
+        run: npm run build
