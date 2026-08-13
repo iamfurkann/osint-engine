@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,6 +14,7 @@ type Config struct {
 	Global   GlobalConfig   `toml:"global"`
 	Database DatabaseConfig `toml:"database"`
 	Engine   EngineConfig   `toml:"engine"`
+	Keys     *Keystore      `toml:"-"` // Şifreli depo (TOML dosyasına düz metin olarak yazılmasını engeller)
 }
 
 type GlobalConfig struct {
@@ -27,8 +29,9 @@ type DatabaseConfig struct {
 }
 
 type EngineConfig struct {
-	MaxWorkers int  `toml:"max_workers"`
-	UseCache   bool `toml:"use_cache"`
+	MaxWorkers int    `toml:"max_workers"`
+	UseCache   bool   `toml:"use_cache"`
+	PluginsDir string `toml:"plugins_dir"`
 }
 
 // DefaultConfig belirtilen çalışma dizinine göre varsayılan ayarları üretir.
@@ -46,6 +49,7 @@ func DefaultConfig(baseDir string) *Config {
 		Engine: EngineConfig{
 			MaxWorkers: 10,
 			UseCache:   true,
+			PluginsDir: filepath.Join(baseDir, "plugins"),
 		},
 	}
 }
@@ -59,31 +63,31 @@ func GetDefaultDir() (string, error) {
 	return filepath.Join(home, ".osint"), nil
 }
 
-// Load yapılandırmayı yükler, dosya yoksa varsayılan alanı ve iskeleti oluşturur.
+// Load yapılandırmayı yükler, dosya yoksa varsayılan alanı ve şifreli depoyu oluşturur.
 func Load() (*Config, error) {
 	dir, err := GetDefaultDir()
 	if err != nil {
 		return nil, err
 	}
 
-	// Klasör yoksa oluştur (Kişisel güvenli izinler: 0700)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
 
-	configPath := filepath.Join(dir, "config.toml")
+	// 1. Şifreli API Anahtar Deposunu (Keystore) Başlat
+	masterKeyPath := filepath.Join(dir, "master.key")
 	apiKeyPath := filepath.Join(dir, "api_keys.enc")
 
-	// Şifreli API anahtar deposu iskeletini (boş dosya) oluştur
-	if _, err := os.Stat(apiKeyPath); os.IsNotExist(err) {
-		if err := os.WriteFile(apiKeyPath, []byte{}, 0600); err != nil {
-			return nil, err
-		}
+	keystore, err := NewKeystore(masterKeyPath, apiKeyPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize keystore: %w", err)
 	}
 
+	configPath := filepath.Join(dir, "config.toml")
 	var cfg *Config
+
+	// 2. TOML Yapılandırmasını Yükle
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		// config.toml yoksa varsayılan değerlerle oluştur
 		cfg = DefaultConfig(dir)
 		data, err := toml.Marshal(cfg)
 		if err != nil {
@@ -93,7 +97,6 @@ func Load() (*Config, error) {
 			return nil, err
 		}
 	} else {
-		// Varsa dosyadan oku
 		data, err := os.ReadFile(configPath)
 		if err != nil {
 			return nil, err
@@ -104,7 +107,7 @@ func Load() (*Config, error) {
 		}
 	}
 
-	// Ortam değişkenleri (Environment) kontrolü ve override işlemi
+	cfg.Keys = keystore // Bellekteki konfigürasyon nesnesine depoyu bağla
 	cfg.applyEnvOverrides()
 
 	return cfg, nil

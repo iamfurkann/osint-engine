@@ -4,41 +4,45 @@ import (
 	"context"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/iamfurkann/osint-engine/internal/domain"
+	"github.com/iamfurkann/osint-engine/pkg/plugin"
 )
 
-// DummyModule, motorun modülleri çalıştırıp çalıştıramadığını test etmek için
-// yazılmış, sahte veriler üreten basit bir test eklentisidir.
 type DummyModule struct{}
 
-// NewDummyModule yeni bir sahte modül başlatır.
 func NewDummyModule() *DummyModule {
 	return &DummyModule{}
 }
 
-func (m *DummyModule) Name() string {
-	return "dummy-module"
+// Manifest, DummyModule'ün kimlik kartını döndürür.
+func (m *DummyModule) Manifest() plugin.Manifest {
+	return plugin.Manifest{
+		ID:          "dummy-1",
+		Name:        "dummy-module",
+		Description: "A dummy module for testing the engine architecture",
+		Version:     "v1.0.0",
+		Type:        plugin.TypeConnector,
+		Language:    "go",
+		Inputs:      []string{"domain", "email"},
+	}
 }
 
-func (m *DummyModule) Run(ctx context.Context, target string) ([]*domain.Finding, error) {
-	// Uzun süren bir network isteğini simüle etmek için kısa bir gecikme ekliyoruz.
-	// Context iptal edilirse beklemeyi keser.
+func (m *DummyModule) Timeout() time.Duration {
+	return 1 * time.Second
+}
+
+// Artık domain.Finding değil, eklentiye özel ham plugin.Result döndürüyoruz
+func (m *DummyModule) Run(ctx context.Context, target string) ([]plugin.Result, error) {
 	select {
 	case <-time.After(50 * time.Millisecond):
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
 
-	// Hedef için sahte bir bulgu (E-posta) üretiyoruz
-	finding := &domain.Finding{
-		ID:        uuid.New().String(), // Benzersiz ID
-		Type:      domain.TypeEmail,
-		Value:     "admin@" + target,
-		Context:   `{"confidence": 99}`,
-		FoundBy:   m.Name(),
-		CreatedAt: time.Now().UTC(),
+	res := plugin.Result{
+		Type:    "email", // E-posta türü
+		Value:   "admin@" + target,
+		Context: `{"confidence": 99}`,
 	}
 
-	return []*domain.Finding{finding}, nil
+	return []plugin.Result{res}, nil
 }

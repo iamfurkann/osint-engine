@@ -56,7 +56,15 @@ func Init(level string, logDir string, filename string) error {
 // (Phase 3'te Orkestratör tarafından kullanılacak)
 func NewInvestigationLogger(logDir string, invID string) zerolog.Logger {
 	invLogDir := filepath.Join(logDir, "investigations")
-	_ = os.MkdirAll(invLogDir, 0700) // Hata kontrolü göz ardı ediliyor, üst katmanda yapıldığı varsayılır
+
+	// Hata artık yutulmuyor! Eğer klasör oluşturulamazsa global logger üzerinden uyarı veriyoruz.
+	// (Lumberjack yine de dosyayı yazmayı deneyecek ve kendi içinde de yönetecektir).
+	if err := os.MkdirAll(invLogDir, 0700); err != nil {
+		log.Warn().
+			Err(err).
+			Str("path", invLogDir).
+			Msg("Failed to create investigation log directory, logs might not be saved correctly")
+	}
 
 	fileWriter := &lumberjack.Logger{
 		Filename:   filepath.Join(invLogDir, invID+".log"),

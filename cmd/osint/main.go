@@ -1,22 +1,20 @@
 package main
 
 import (
-	"context"
 	"fmt"
+	"os"
 
-	"github.com/iamfurkann/osint-engine/internal/app"
-	"github.com/rs/zerolog/log"
+	"github.com/iamfurkann/osint-engine/internal/cli"
 )
 
+// Build zamanında ayarlanır: go build -ldflags "-X main.version=v0.1.0"
+var version = "v0.1.0-dev"
+
 func main() {
-	ctx := context.Background()
+	rootCmd := cli.NewRootCmd(version)
 
-	// Çekirdek bileşenleri ortak bootstrap üzerinden ayağa kaldırıyoruz
-	cfg, database := app.Bootstrap(ctx, "osint-cli.log")
-	defer func() { _ = database.Close() }()
-
-	log.Info().Str("version", cfg.Global.Version).Msg("OSINT Engine CLI başlatıldı")
-
-	fmt.Printf("OSINT Engine CLI %s (Log Level: %s)\n", cfg.Global.Version, cfg.Global.LogLevel)
-	fmt.Println("Veritabanı bağlantısı ve şema kontrolleri başarılı.")
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Hata: %v\n", err)
+		os.Exit(1)
+	}
 }

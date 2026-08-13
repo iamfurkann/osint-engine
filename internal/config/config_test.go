@@ -41,3 +41,57 @@ func TestEnvOverrides(t *testing.T) {
 		t.Errorf("expected overridden max workers 25, got %d", cfg.Engine.MaxWorkers)
 	}
 }
+
+func TestLoad(t *testing.T) {
+	// 1. Gerçek ~/.osint klasörünü kirletmemek için geçici bir izole klasör oluştur
+	tempHome := t.TempDir()
+
+	// 2. İşletim sisteminin HOME (Linux/Mac) ve USERPROFILE (Windows) değişkenlerini geçici klasöre yönlendir
+	originalHome := os.Getenv("HOME")
+	originalUserProfile := os.Getenv("USERPROFILE")
+	os.Setenv("HOME", tempHome)
+	os.Setenv("USERPROFILE", tempHome)
+
+	// Test bitince ortam değişkenlerini eski (gerçek) haline geri getir
+	defer func() {
+		os.Setenv("HOME", originalHome)
+		os.Setenv("USERPROFILE", originalUserProfile)
+	}()
+
+	// 3. İLK YÜKLEME (Dosyalar Yokken): Sıfırdan oluşturulmasını test et
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed on first call: %v", err)
+	}
+	if cfg == nil {
+		t.Fatalf("expected config, got nil")
+	}
+
+	// Gerekli dosyaların oluşturulduğunu doğrula
+	osintDir := filepath.Join(tempHome, ".osint")
+	expectedFiles := []string{
+		"config.toml",
+		"master.key",
+	}
+
+	for _, file := range expectedFiles {
+		path := filepath.Join(osintDir, file)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected file %s to be created, but it was not", file)
+		}
+	}
+
+	// 4. İKİNCİ YÜKLEME (Dosyalar Varken): Var olanın okunmasını test et
+	cfg2, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed on second call: %v", err)
+	}
+	if cfg2.Global.Version != cfg.Global.Version {
+		t.Errorf("expected version %s, got %s", cfg.Global.Version, cfg2.Global.Version)
+	}
+
+	// Keystore'un başarıyla bellek nesnesine bağlandığını doğrula
+	if cfg2.Keys == nil {
+		t.Errorf("expected keystore to be initialized, got nil")
+	}
+}

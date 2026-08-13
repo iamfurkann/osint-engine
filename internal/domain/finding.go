@@ -24,6 +24,7 @@ type Finding struct {
 	Value           string      `json:"value"`    // Örn: "admin@example.com"
 	Context         string      `json:"context"`  // Zengin veri, genellikle JSON string (örn: {"source": "github"})
 	FoundBy         string      `json:"found_by"` // Modülün adı (örn: "github-scraper")
+	Confidence      int         `json:"confidence"`
 	CreatedAt       time.Time   `json:"created_at"`
 }
 

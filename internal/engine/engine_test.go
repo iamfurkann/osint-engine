@@ -29,12 +29,18 @@ func TestEngine_ModuleExecutionAndFindings(t *testing.T) {
 		t.Fatalf("Failed to create parent investigation: %v", err)
 	}
 
-	// Motoru 2 işçiyle başlatıyoruz
-	eng := NewEngine(database, 2)
+	// Motoru 2 işçiyle başlatıyoruz — bağımlılıklar dışarıdan enjekte ediliyor (DIP)
+	findingRepo := sqlite.NewFindingRepository(database)
+	registry := NewRegistry()
+	lifecycle := NewLifecycleManager(registry)
+	registry.SetLifecycle(lifecycle)
+	eng := NewEngine(findingRepo, registry, lifecycle, 2)
 
-	// Test modülümüzü kaydediyoruz
+	// Test modülümüzü registry'ye kaydediyoruz
 	dummy := NewDummyModule()
-	eng.RegisterModule(dummy)
+	if err := registry.Register(dummy); err != nil {
+		t.Fatalf("failed to register dummy module: %v", err)
+	}
 
 	eng.Start()
 
@@ -43,7 +49,7 @@ func TestEngine_ModuleExecutionAndFindings(t *testing.T) {
 		task := Task{
 			InvestigationID: invID,
 			Target:          "example.com",
-			PluginName:      dummy.Name(),
+			PluginName:      dummy.Manifest().Name, // Artık Manifest üzerinden ismini alıyoruz
 		}
 		if err := eng.SubmitTask(task); err != nil {
 			t.Fatalf("failed to submit task: %v", err)
@@ -60,7 +66,6 @@ func TestEngine_ModuleExecutionAndFindings(t *testing.T) {
 	}
 
 	// Veritabanına gidip 3 adet bulgu (Finding) kaydedilmiş mi diye kontrol ediyoruz
-	findingRepo := sqlite.NewFindingRepository(database)
 	findings, err := findingRepo.GetByInvestigationID(context.Background(), invID)
 	if err != nil {
 		t.Fatalf("failed to get findings: %v", err)

@@ -2,6 +2,8 @@ package domain
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -22,6 +24,30 @@ type Investigation struct {
 	Status    InvestigationStatus `json:"status"`
 	CreatedAt time.Time           `json:"created_at"`
 	UpdatedAt time.Time           `json:"updated_at"`
+}
+
+// Validate, araştırma nesnesinin kurallara uygun olup olmadığını denetler.
+func (i *Investigation) Validate() error {
+	if strings.TrimSpace(i.ID) == "" {
+		return fmt.Errorf("investigation ID cannot be empty")
+	}
+
+	name := strings.TrimSpace(i.Name)
+	if name == "" {
+		return fmt.Errorf("investigation name cannot be empty")
+	}
+	if len(name) > 255 {
+		return fmt.Errorf("investigation name cannot exceed 255 characters")
+	}
+
+	switch i.Status {
+	case StatusActive, StatusPaused, StatusCompleted, StatusArchived:
+		// Geçerli statü
+	default:
+		return fmt.Errorf("invalid investigation status: %s", i.Status)
+	}
+
+	return nil
 }
 
 // InvestigationRepository, veritabanı işlemlerini soyutlayan sözleşmedir (Interface).

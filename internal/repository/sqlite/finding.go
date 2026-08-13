@@ -18,10 +18,10 @@ func NewFindingRepository(database *db.DB) domain.FindingRepository {
 }
 
 func (r *findingRepo) Create(ctx context.Context, f *domain.Finding) error {
-	query := `INSERT INTO findings (id, investigation_id, type, value, context, found_by, created_at) 
-	          VALUES (?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO findings (id, investigation_id, type, value, context, found_by, confidence, created_at) 
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 
-	_, err := r.db.ExecContext(ctx, query, f.ID, f.InvestigationID, f.Type, f.Value, f.Context, f.FoundBy, f.CreatedAt)
+	_, err := r.db.ExecContext(ctx, query, f.ID, f.InvestigationID, f.Type, f.Value, f.Context, f.FoundBy, f.Confidence, f.CreatedAt)
 	if err != nil {
 		return errors.Wrap(errors.TypeInternal, "failed to create finding", err)
 	}
@@ -29,7 +29,7 @@ func (r *findingRepo) Create(ctx context.Context, f *domain.Finding) error {
 }
 
 func (r *findingRepo) GetByInvestigationID(ctx context.Context, invID string) ([]*domain.Finding, error) {
-	query := `SELECT id, investigation_id, type, value, context, found_by, created_at 
+	query := `SELECT id, investigation_id, type, value, context, found_by, confidence, created_at 
 	          FROM findings WHERE investigation_id = ? ORDER BY created_at DESC`
 
 	rows, err := r.db.QueryContext(ctx, query, invID)
@@ -41,7 +41,7 @@ func (r *findingRepo) GetByInvestigationID(ctx context.Context, invID string) ([
 	var findings []*domain.Finding
 	for rows.Next() {
 		var f domain.Finding
-		if err := rows.Scan(&f.ID, &f.InvestigationID, &f.Type, &f.Value, &f.Context, &f.FoundBy, &f.CreatedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.InvestigationID, &f.Type, &f.Value, &f.Context, &f.FoundBy, &f.Confidence, &f.CreatedAt); err != nil {
 			return nil, errors.Wrap(errors.TypeInternal, "failed to scan finding row", err)
 		}
 		findings = append(findings, &f)

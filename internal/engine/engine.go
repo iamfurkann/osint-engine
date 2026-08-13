@@ -6,10 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/iamfurkann/osint-engine/internal/db"
 	"github.com/iamfurkann/osint-engine/internal/domain"
 	"github.com/iamfurkann/osint-engine/internal/errors"
-	"github.com/iamfurkann/osint-engine/internal/repository/sqlite"
 	"github.com/rs/zerolog/log"
 )
 
@@ -19,19 +17,36 @@ type Task struct {
 	PluginName      string
 }
 
-type Engine struct {
-	db          *db.DB
-	findingRepo domain.FindingRepository
-	maxWorkers  int
-	taskQueue   chan Task
-	wg          sync.WaitGroup
-	ctx         context.Context
-	cancel      context.CancelFunc
-	modules     map[string]Module // Kayıtlı modüllerin tutulduğu sözlük
-	moduleMutex sync.RWMutex      // Modül eklerken yarış durumlarını (race condition) önlemek için kilit
+// TaskResult, modülün çalıştıktan sonra orkestratöre döndürdüğü karnesidir.
+type TaskResult struct {
+	InvestigationID string
+	PluginName      string
+	Success         bool
+	Error           error
+	FindingsCount   int
 }
 
-func NewEngine(database *db.DB, maxWorkers int) *Engine {
+// Engine, OSINT modüllerini çalıştıran, görevleri dağıtan ve sonuçları toplayan çekirdek motordur.
+// Tüm bağımlılıklar dışarıdan enjekte edilir (DIP): FindingRepository + Registry + LifecycleManager.
+type Engine struct {
+	findingRepo domain.FindingRepository
+	registry    *Registry
+	lifecycle   *LifecycleManager
+	maxWorkers  int
+	taskQueue   chan Task
+	resultQueue chan TaskResult
+	wg          sync.WaitGroup
+	resultWg    sync.WaitGroup
+	ctx         context.Context
+	cancel      context.CancelFunc
+}
+
+// NewEngine, motoru başlatır. Tüm bağımlılıklar dışarıdan enjekte edilir:
+//   - findingRepo: bulguların veritabanına yazılması için repository interface'i
+//   - registry: kayıtlı plugin'lerin merkezi defteri
+//   - lifecycle: plugin yaşam döngüsü yöneticisi
+//   - maxWorkers: eşzamanlı çalışacak worker sayısı
+func NewEngine(findingRepo domain.FindingRepository, registry *Registry, lifecycle *LifecycleManager, maxWorkers int) *Engine {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	if maxWorkers <= 0 {
@@ -39,27 +54,38 @@ func NewEngine(database *db.DB, maxWorkers int) *Engine {
 	}
 
 	return &Engine{
-		db:          database,
-		findingRepo: sqlite.NewFindingRepository(database), // P1.3'te yazdığımız repo
+		findingRepo: findingRepo,
+		registry:    registry,
+		lifecycle:   lifecycle,
 		maxWorkers:  maxWorkers,
 		taskQueue:   make(chan Task, 100),
+		resultQueue: make(chan TaskResult, 100),
 		ctx:         ctx,
 		cancel:      cancel,
-		modules:     make(map[string]Module),
 	}
 }
 
-// RegisterModule, motora yeni bir OSINT eklentisi (plugin) tanıtır.
-func (e *Engine) RegisterModule(m Module) {
-	e.moduleMutex.Lock()
-	defer e.moduleMutex.Unlock()
-	e.modules[m.Name()] = m
-	log.Info().Str("plugin", m.Name()).Msg("Module registered successfully")
+// Registry, Engine'in kullandığı plugin registry'sine erişim sağlar.
+func (e *Engine) Registry() *Registry {
+	return e.registry
+}
+
+// Lifecycle, Engine'in kullandığı lifecycle manager'a erişim sağlar.
+func (e *Engine) Lifecycle() *LifecycleManager {
+	return e.lifecycle
 }
 
 func (e *Engine) Start() {
 	log.Info().Int("workers", e.maxWorkers).Msg("Starting OSINT Engine worker pool...")
 
+	// 1. Tüm kayıtlı plugin'leri aktif et
+	e.lifecycle.ActivateAll()
+
+	// 2. Sonuç İşleyiciyi (Orkestratör) Başlat
+	e.resultWg.Add(1)
+	go e.resultProcessor()
+
+	// 3. İşçileri (Workers) Başlat
 	for i := 1; i <= e.maxWorkers; i++ {
 		e.wg.Add(1)
 		go e.worker(i)
@@ -68,9 +94,17 @@ func (e *Engine) Start() {
 
 func (e *Engine) Stop() {
 	log.Info().Msg("Stopping OSINT Engine... Waiting for active tasks to finish.")
-	close(e.taskQueue)
-	e.cancel()
-	e.wg.Wait()
+
+	close(e.taskQueue) // 1. Dışarıdan yeni görev alımını durdur
+	e.cancel()         // 2. Motorun iptal sinyalini yay
+	e.wg.Wait()        // 3. İşçilerin (workers) ellerindeki son işleri bitirmesini bekle
+
+	close(e.resultQueue) // 4. İşçiler bittiğine göre sonuç kanalını güvenle kapatabiliriz
+	e.resultWg.Wait()    // 5. Orkestratörün son kayıtları veritabanına/loga yazmasını bekle
+
+	// 6. Tüm plugin'leri deaktif et
+	e.lifecycle.DeactivateAll()
+
 	log.Info().Msg("OSINT Engine stopped safely.")
 }
 
@@ -89,13 +123,44 @@ func (e *Engine) worker(id int) {
 	log.Debug().Int("worker_id", id).Msg("Worker started")
 
 	for task := range e.taskQueue {
-		e.processTask(id, task)
+		// İşçi görevini yapar ve karnesini (result) alır
+		result := e.processTask(id, task)
+		// Karneyi orkestratöre iletir (Artık hatalar yutulmuyor!)
+		e.resultQueue <- result
 	}
 
 	log.Debug().Int("worker_id", id).Msg("Worker stopped")
 }
 
-func (e *Engine) processTask(workerID int, task Task) {
+// resultProcessor, kanaldan gelen görev sonuçlarını toplayan merkezi birimdir
+func (e *Engine) resultProcessor() {
+	defer e.resultWg.Done()
+	log.Debug().Msg("Result processor started")
+
+	for res := range e.resultQueue {
+		if !res.Success {
+			log.Warn().
+				Str("investigation_id", res.InvestigationID).
+				Str("plugin", res.PluginName).
+				Err(res.Error).
+				Msg("Task completed with failure")
+		} else {
+			log.Info().
+				Str("investigation_id", res.InvestigationID).
+				Str("plugin", res.PluginName).
+				Int("findings", res.FindingsCount).
+				Msg("Task completed successfully")
+		}
+
+		// TODO: P2.4'te burada InvestigationRepository üzerinden
+		// araştırmanın 'status' alanını duruma göre 'Completed' veya 'Failed' yapacağız.
+	}
+
+	log.Debug().Msg("Result processor stopped")
+}
+
+// processTask artık sadece log basıp geçmiyor, geriye somut bir karne (TaskResult) döndürüyor
+func (e *Engine) processTask(workerID int, task Task) TaskResult {
 	log.Info().
 		Int("worker_id", workerID).
 		Str("investigation_id", task.InvestigationID).
@@ -103,38 +168,68 @@ func (e *Engine) processTask(workerID int, task Task) {
 		Str("plugin", task.PluginName).
 		Msg("Processing task...")
 
-	// 1. Modülü bul (Okuma Kilidi)
-	e.moduleMutex.RLock()
-	module, exists := e.modules[task.PluginName]
-	e.moduleMutex.RUnlock()
-
-	if !exists {
-		log.Error().Str("plugin", task.PluginName).Msg("Plugin not found, dropping task")
-		return
+	// Varsayılan olarak başarısız kabul edilen bir karne oluştur
+	result := TaskResult{
+		InvestigationID: task.InvestigationID,
+		PluginName:      task.PluginName,
+		Success:         false,
 	}
 
-	// 2. Modülü çalıştır (3 dakikalık bir timeout veriyoruz)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	// Lifecycle kontrolü: plugin aktif değilse görevi reddet (izolasyon)
+	if !e.lifecycle.IsActive(task.PluginName) {
+		result.Error = errors.Wrap(errors.TypeInternal, "plugin is not active (possibly in error state)", nil)
+		log.Warn().Str("plugin", task.PluginName).Msg("Task rejected — plugin is not active")
+		return result
+	}
+
+	module, err := e.registry.Get(task.PluginName)
+	if err != nil {
+		result.Error = errors.Wrap(errors.TypeNotFound, "plugin not found", err)
+		log.Error().Str("plugin", task.PluginName).Msg("Plugin not found, dropping task")
+		return result
+	}
+
+	timeout := module.Timeout()
+	if timeout <= 0 {
+		timeout = 3 * time.Minute
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	findings, err := module.Run(ctx, task.Target)
+	results, err := module.Run(ctx, task.Target)
 	if err != nil {
-		log.Error().Err(err).Str("plugin", task.PluginName).Msg("Module execution failed")
-		return
+		// Hatalı plugin'i izole et — çekirdek etkilenmez
+		e.lifecycle.MarkError(task.PluginName, err)
+		result.Error = errors.Wrap(errors.TypeInternal, "module execution failed", err)
+		log.Error().Err(err).Str("plugin", task.PluginName).Msg("Module execution failed, plugin marked as error")
+		return result
 	}
 
-	// 3. Çıkan sonuçları (Findings) veritabanına kaydet
-	for _, f := range findings {
-		// Güvenlik: Modül ID belirlememişse biz atıyoruz
-		if f.ID == "" {
-			f.ID = uuid.New().String()
+	savedCount := 0
+	for _, res := range results {
+		// Ham sonucu (Result), veritabanına yazılacak Zengin Bulguya (Finding) çevir!
+		f := &domain.Finding{
+			ID:              uuid.New().String(),
+			InvestigationID: task.InvestigationID,
+			Type:            domain.FindingType(res.Type), // Türü eşle
+			Value:           res.Value,
+			Context:         res.Context,
+			FoundBy:         module.Manifest().Name, // Manifest'ten ismi al
+			CreatedAt:       time.Now().UTC(),
 		}
-		f.InvestigationID = task.InvestigationID
 
 		if err := e.findingRepo.Create(ctx, f); err != nil {
 			log.Error().Err(err).Msg("Failed to save finding to database")
-		} else {
-			log.Debug().Str("finding_id", f.ID).Str("value", f.Value).Msg("Finding saved")
+			continue
 		}
+
+		log.Debug().Str("finding_id", f.ID).Str("value", f.Value).Msg("Finding saved")
+		savedCount++
 	}
+
+	// Her şey sorunsuzsa karneyi "Başarılı" olarak işaretle
+	result.Success = true
+	result.FindingsCount = savedCount
+	return result
 }

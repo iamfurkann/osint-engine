@@ -19,6 +19,8 @@ type DB struct {
 func Connect(ctx context.Context, dbPath string) (*DB, error) {
 	// Veritabanı dosya yolu parametreleri (Timeout ve WAL modu için)
 	// modernc.org/sqlite için DSN formatı
+	// WAL modu: Çoklu okuma + Tek yazmayı donanım seviyesinde destekler.
+	// busy_timeout(5000): Yazma kuyruğunda kilitlenme olursa Go goroutine'inin hata fırlatmadan önce 5 saniye beklemesini sağlar.
 	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)", dbPath)
 
 	db, err := sql.Open("sqlite", dsn)
@@ -27,9 +29,10 @@ func Connect(ctx context.Context, dbPath string) (*DB, error) {
 	}
 
 	// Connection Pool (Bağlantı Havuzu) Ayarları
-	// SQLite'da yazma işlemlerinin kilitlenmemesi için MaxOpenConns genellikle 1 tutulur.
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
+	// WAL modunun sunduğu eşzamanlı okuma avantajından yararlanmak için bağlantı üst sınırını artırıyoruz.
+	// 4 ila 8 arası bağlantı, OSINT Engine gibi yoğun okuma/yazma yapan dağıtık yapılarda optimal performansı sağlar.
+	db.SetMaxOpenConns(8)
+	db.SetMaxIdleConns(4) // Boştaki bağlantıları tamamen yok etmeyip 4 adet hazırda tutarak el sıkışma (handshake) maliyetini azaltıyoruz.
 	db.SetConnMaxLifetime(time.Hour)
 
 	// Bağlantının gerçekten sağlanıp sağlanmadığını test et

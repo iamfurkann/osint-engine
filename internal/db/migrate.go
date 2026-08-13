@@ -37,6 +37,15 @@ var migrations = []string{
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);`, // V3: Eklentiler (Plugins) tablosu
+	`CREATE TABLE IF NOT EXISTS watchlist (
+		id TEXT PRIMARY KEY,
+		target TEXT NOT NULL,
+		type TEXT NOT NULL,
+		interval INTEGER NOT NULL,
+		last_run DATETIME,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);`, // V4: İzleme Listesi (Watchlist) tablosu
+	`ALTER TABLE findings ADD COLUMN confidence INTEGER DEFAULT 0;`, // V5: Güven puanı sütunu
 }
 
 // Migrate, veritabanını en güncel şema versiyonuna yükseltir.
